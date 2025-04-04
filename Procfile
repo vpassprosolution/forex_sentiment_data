@@ -1,0 +1,1 @@
+worker: python price_fetcher_forex.py && python news_fetcher_forex.py
