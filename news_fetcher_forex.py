@@ -1,11 +1,16 @@
 # ✅ news_fetcher_forex.py – Google News 1 article scraper (1 per pair)
+
 import time
 from googlesearch import search
 from newspaper import Article
-from price_fetcher_forex import fetch_price
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from database import save_sentiment
 
-# 20 major forex pairs and their search keywords
+# 🏦 PostgreSQL DB URL
+DB_URL = "postgresql://postgres:vVMyqWjrqgVhEnwyFifTQxkDtPjQutGb@interchange.proxy.rlwy.net:30451/railway"
+
+# 20 major forex pairs
 PAIRS = {
     "EURUSD": "euro dollar",
     "GBPUSD": "pound dollar",
@@ -30,30 +35,36 @@ PAIRS = {
 }
 
 def fetch_article(query):
-    print(f"🔍 Searching: {query}")
     try:
+        print(f"🔍 Searching: {query}")
         urls = list(search(f"{query} forex news", num_results=5, lang="en"))
         for url in urls:
-            if any(x in url for x in ["youtube.com", "twitter.com"]):
+            if "youtube.com" in url or "twitter.com" in url:
                 continue
-            try:
-                article = Article(url)
-                article.download()
-                article.parse()
-                if len(article.text.strip()) < 100:
-                    continue  # skip short/empty articles
-
-                return {
-                    "title": article.title.strip(),
-                    "summary": article.text.strip().replace("\n", " ")[:300],
-                    "sentiment": "neutral"  # later we can add real analysis
-                }
-            except Exception as e:
-                print(f"❌ Failed URL: {url}")
-                print(f"   → {e}")
+            article = Article(url)
+            article.download()
+            article.parse()
+            return {
+                "title": article.title,
+                "summary": article.text[:300],  # just first 300 chars
+                "sentiment": "neutral"
+            }
     except Exception as e:
-        print(f"❌ Google Search Error: {e}")
+        print(f"❌ Error fetching article: {e}")
     return None
+
+def get_price_from_db(symbol):
+    try:
+        conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
+        cur = conn.cursor()
+        cur.execute("SELECT price FROM forex_sentiment WHERE symbol = %s", (symbol,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row["price"] if row else None
+    except Exception as e:
+        print(f"❌ DB fetch error for {symbol}: {e}")
+        return None
 
 def run():
     print("📡 Running Forex News Fetcher...\n")
@@ -61,16 +72,16 @@ def run():
         print(f"🔍 {symbol} → keyword: {keyword}")
         article = fetch_article(keyword)
         if article:
-            price = fetch_price(symbol)
-            if price is None:
+            price = get_price_from_db(symbol)
+            if price:
+                save_sentiment(symbol, price, "neutral", "HOLD", article)
+                print(f"✅ Saved → {symbol} | {article['title'][:60]}...\n")
+            else:
                 print(f"❌ Price not found for {symbol}")
-                continue
-            save_sentiment(symbol, price, "neutral", "HOLD", article)
-            print(f"✅ Saved → {symbol} | {article['title'][:60]}...\n")
         else:
             print("  ❌ No article found.\n")
         print("--------------------------------------------------")
-        time.sleep(3)  # polite pause between requests
+        time.sleep(3)
 
 if __name__ == "__main__":
     run()
