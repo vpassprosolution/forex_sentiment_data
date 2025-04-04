@@ -1,3 +1,4 @@
+# ✅ price_fetcher_forex.py – Fetch and save live forex prices from TwelveData
 import requests
 import psycopg2
 from datetime import datetime
@@ -16,7 +17,7 @@ DB_CONFIG = {
     'port': '30451'
 }
 
-# 🎯 Forex Pairs with slash format (✅ required by TwelveData)
+# 🎯 Forex Pairs (TwelveData requires slash format)
 forex_pairs = [
     "EUR/USD", "GBP/USD", "AUD/USD", "NZD/USD", "USD/JPY",
     "USD/CAD", "USD/CHF", "USD/CNH", "USD/HKD", "USD/SEK",
@@ -44,22 +45,29 @@ def update_price(symbol, price):
     except Exception as e:
         print(f"❌ DB Error for {symbol}: {e}")
 
+def fetch_price(symbol):
+    """Fetch price for a single symbol. Used by news_fetcher_forex."""
+    try:
+        response = requests.get(BASE_URL, params={
+            'symbol': symbol,
+            'apikey': API_KEY
+        })
+        data = response.json()
+        if 'price' in data:
+            return float(data['price'])
+        else:
+            print(f"❌ API error for {symbol}: {data}")
+    except Exception as e:
+        print(f"❌ Failed fetching {symbol}: {e}")
+    return None
+
 def fetch_prices():
     print("📡 Fetching Forex Prices...\n")
     for symbol in forex_pairs:
-        try:
-            response = requests.get(BASE_URL, params={
-                'symbol': symbol,
-                'apikey': API_KEY
-            })
-            data = response.json()
-            if 'price' in data:
-                update_price(symbol, float(data['price']))
-            else:
-                print(f"❌ API error for {symbol}: {data}")
-            time.sleep(8)  # ⏳ Respect TwelveData limit
-        except Exception as e:
-            print(f"❌ Failed for {symbol}: {e}")
+        price = fetch_price(symbol)
+        if price is not None:
+            update_price(symbol, price)
+        time.sleep(8)  # 🔄 Respect API limit (8/minute)
 
 if __name__ == "__main__":
     fetch_prices()

@@ -5,7 +5,7 @@ from newspaper import Article
 from price_fetcher_forex import fetch_price
 from database import save_sentiment
 
-# 20 major forex pairs
+# 20 major forex pairs and their search keywords
 PAIRS = {
     "EURUSD": "euro dollar",
     "GBPUSD": "pound dollar",
@@ -30,22 +30,29 @@ PAIRS = {
 }
 
 def fetch_article(query):
+    print(f"🔍 Searching: {query}")
     try:
-        print(f"🔍 Searching: {query}")
         urls = list(search(f"{query} forex news", num_results=5, lang="en"))
         for url in urls:
-            if "youtube.com" in url or "twitter.com" in url:
+            if any(x in url for x in ["youtube.com", "twitter.com"]):
                 continue
-            article = Article(url)
-            article.download()
-            article.parse()
-            return {
-                "title": article.title,
-                "summary": article.text[:300],  # just first 300 chars
-                "sentiment": "neutral"
-            }
+            try:
+                article = Article(url)
+                article.download()
+                article.parse()
+                if len(article.text.strip()) < 100:
+                    continue  # skip short/empty articles
+
+                return {
+                    "title": article.title.strip(),
+                    "summary": article.text.strip().replace("\n", " ")[:300],
+                    "sentiment": "neutral"  # later we can add real analysis
+                }
+            except Exception as e:
+                print(f"❌ Failed URL: {url}")
+                print(f"   → {e}")
     except Exception as e:
-        print(f"❌ Error fetching article: {e}")
+        print(f"❌ Google Search Error: {e}")
     return None
 
 def run():
@@ -55,12 +62,15 @@ def run():
         article = fetch_article(keyword)
         if article:
             price = fetch_price(symbol)
+            if price is None:
+                print(f"❌ Price not found for {symbol}")
+                continue
             save_sentiment(symbol, price, "neutral", "HOLD", article)
             print(f"✅ Saved → {symbol} | {article['title'][:60]}...\n")
         else:
             print("  ❌ No article found.\n")
         print("--------------------------------------------------")
-        time.sleep(3)  # polite pause
+        time.sleep(3)  # polite pause between requests
 
 if __name__ == "__main__":
     run()
